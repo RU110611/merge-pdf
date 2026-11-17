@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Merge PDF</title>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #f4f6f9;
+      color: #1e293b;
+      max-width: 560px;
+      margin: 40px auto;
+      padding: 0 16px;
+    }
+    .card {
+      background: #ffffff;
+      padding: 28px;
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    }
+    h2 { margin-top: 0; margin-bottom: 6px; font-size: 22px; }
+    .subtitle { margin-top: 0; margin-bottom: 20px; color: #64748b; font-size: 14px; }
+    .dropzone {
+      border: 2px dashed #cbd5e1;
+      background: #f8fafc;
+      padding: 26px 20px;
+      text-align: center;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .dropzone:hover, .dropzone.dragover {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+    .dropzone p { margin: 0; font-size: 15px; font-weight: 500; color: #334155; }
+    .dropzone span { display: block; margin-top: 4px; font-size: 12px; color: #64748b; }
+    .helper-tip {
+      display: none;
+      margin: 16px 0 8px;
+      font-size: 12px;
+      color: #64748b;
+    }
+    #fileList {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      gap: 10px;
+      cursor: grab;
+      user-select: none;
+    }
+    .file-item:active { cursor: grabbing; }
+    .sortable-ghost {
+      opacity: 0.4;
+      background: #eff6ff;
+      border: 1px dashed #2563eb;
+    }
+    .sortable-chosen {
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.15);
+      border-color: #93c5fd;
+    }
+    .file-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex: 1;
+    }
+    .drag-handle {
+      color: #94a3b8;
+      font-size: 16px;
+      letter-spacing: -2px;
+      padding-right: 2px;
+      flex-shrink: 0;
+    }
+    .badge-input {
+      background: #2563eb;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      width: 34px;
+      height: 26px;
+      border: none;
+      border-radius: 6px;
+      text-align: center;
+      flex-shrink: 0;
+      cursor: pointer;
+      -moz-appearance: textfield;
+    }
+    .badge-input::-webkit-outer-spin-button,
+    .badge-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    .badge-input:focus {
+      outline: 2px solid #93c5fd;
+      background: #1d4ed8;
+      cursor: text;
+    }
+    .file-details { min-width: 0; }
+    .file-name {
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .file-size { font-size: 12px; color: #64748b; }
+    .delete-btn {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #475569;
+      border-radius: 6px;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .delete-btn:hover {
+      background: #fee2e2;
+      border-color: #fca5a5;
+      color: #dc2626;
+    }
+    .output-group {
+      display: none;
+      margin-bottom: 16px;
+    }
+    .output-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: #475569;
+    }
+    .output-group input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    .merge-btn {
+      width: 100%;
+      padding: 12px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .merge-btn:hover { background: #1d4ed8; }
+    .merge-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    #status {
+      margin-top: 12px;
+      margin-bottom: 0;
+      font-size: 13px;
+      text-align: center;
+      color: #475569;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Merge PDF</h2>
+    <p class="subtitle">Pilih beberapa file PDF, atur urutannya, lalu gabungkan.</p>
+
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('pdfInput').click()">
+      <p>+ Klik untuk pilih atau tarik file PDF ke sini</p>
+      <span>Bisa pilih banyak file sekaligus atau tambah bertahap</span>
+    </div>
+    <input type="file" id="pdfInput" accept="application/pdf" multiple hidden />
+
+    <p class="helper-tip" id="helperTip">
+      Tip: Geser baris untuk atur urutan, atau <strong>klik kotak nomor biru</strong> untuk langsung ketik posisi urutan.
+    </p>
+    <ul id="fileList"></ul>
+
+    <div class="output-group" id="outputGroup">
+      <label for="outputName">Nama file hasil:</label>
+      <input type="text" id="outputName" value="hasil-merge.pdf" placeholder="hasil-merge.pdf" />
+    </div>
+
+    <button class="merge-btn" id="mergeBtn" onclick="mergePDFs()">Gabungkan & Download</button>
+    <p id="status"></p>
+  </div>
+
+  <script>
+    let selectedFiles = [];
+
+    const pdfInput = document.getElementById('pdfInput');
+    const dropzone = document.getElementById('dropzone');
+    const fileList = document.getElementById('fileList');
+    const helperTip = document.getElementById('helperTip');
+    const outputGroup = document.getElementById('outputGroup');
+    const statusEl = document.getElementById('status');
+
+    if (window.Sortable) {
+      new Sortable(fileList, {
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        filter: 'input, button',
+        preventOnFilter: false,
+        scroll: true,
+        forceAutoscrollFallback: true,
+        scrollSensitivity: 90,
+        scrollSpeed: 18,
+        onEnd: (evt) => {
+          if (evt.oldIndex !== evt.newIndex) {
+            const [movedFile] = selectedFiles.splice(evt.oldIndex, 1);
+            selectedFiles.splice(evt.newIndex, 0, movedFile);
+            renderList();
+          }
+        }
+      });
+    }
+
+    pdfInput.addEventListener('change', (e) => {
+      addFiles(e.target.files);
+      pdfInput.value = '';
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        addFiles(e.dataTransfer.files);
+      }
+    });
+
+    function addFiles(files) {
+      const pdfs = Array.from(files).filter(f => f.type === 'application/pdf');
+      if (pdfs.length === 0) {
+        statusEl.textContent = 'Hanya file PDF yang didukung.';
+        return;
+      }
+      selectedFiles = selectedFiles.concat(pdfs);
+      statusEl.textContent = '';
+      renderList();
+    }
+
+    function removeFile(index) {
+      selectedFiles.splice(index, 1);
+      renderList();
+    }
+
+    function jumpToPosition(oldIndex, rawValue) {
+      let targetPos = parseInt(rawValue, 10);
+      if (isNaN(targetPos)) {
+        renderList();
+        return;
+      }
+      targetPos = Math.max(1, Math.min(selectedFiles.length, targetPos));
+      const newIndex = targetPos - 1;
+      if (newIndex !== oldIndex) {
+        const [movedFile] = selectedFiles.splice(oldIndex, 1);
+        selectedFiles.splice(newIndex, 0, movedFile);
+      }
+      renderList();
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function renderList() {
+      fileList.innerHTML = '';
+      outputGroup.style.display = selectedFiles.length > 0 ? 'block' : 'none';
+      helperTip.style.display = selectedFiles.length > 1 ? 'block' : 'none';
+
+      selectedFiles.forEach((file, index) => {
+        const li = document.createElement('li');
+        li.className = 'file-item';
+
+        li.innerHTML = `
+          <div class="file-info">
+            <span class="drag-handle" title="Geser untuk ubah urutan">⋮⋮</span>
+            <input
+              type="number"
+              class="badge-input"
+              value="${index + 1}"
+              min="1"
+              max="${selectedFiles.length}"
+              title="Klik untuk ketik nomor urutan tujuan"
+              onfocus="this.select()"
+              onchange="jumpToPosition(${index}, this.value)"
+              onkeydown="if(event.key === 'Enter') this.blur()"
+            />
+            <div class="file-details">
+              <div class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+              <div class="file-size">${formatSize(file.size)}</div>
+            </div>
+          </div>
+          <button class="delete-btn" onclick="removeFile(${index})" title="Hapus">×</button>
+        `;
+
+        fileList.appendChild(li);
+      });
+    }
+
+    async function mergePDFs() {
+      if (selectedFiles.length < 2) {
+        statusEl.textContent = 'Pilih minimal 2 file PDF dulu.';
+        return;
+      }
+
+      const mergeBtn = document.getElementById('mergeBtn');
+      mergeBtn.disabled = true;
+      statusEl.textContent = 'Lagi menggabungkan...';
+
+      try {
+        const { PDFDocument } = PDFLib;
+        const mergedPdf = await PDFDocument.create();
+
+        for (const file of selectedFiles) {
+          const bytes = await file.arrayBuffer();
+          const pdf = await PDFDocument.load(bytes);
+          const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+          pages.forEach((page) => mergedPdf.addPage(page));
+        }
+
+        const mergedBytes = await mergedPdf.save();
+        const blob = new Blob([mergedBytes], { type: 'application/pdf' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+
+        let fileName = document.getElementById('outputName').value.trim() || 'hasil-merge.pdf';
+        if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
+        link.download = fileName;
+        link.click();
+
+        statusEl.textContent = `Selesai! ${selectedFiles.length} file berhasil digabung.`;
+      } catch (err) {
+        statusEl.textContent = 'Gagal memproses PDF. Pastikan file tidak ter-password.';
+      } finally {
+        mergeBtn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
