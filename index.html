@@ -6,13 +6,15 @@
   <title>Merge PDF</title>
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+  <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     body {
       font-family: system-ui, -apple-system, sans-serif;
       background: #f4f6f9;
       color: #1e293b;
-      max-width: 560px;
+      max-width: 600px;
       margin: 40px auto;
       padding: 0 16px;
     }
@@ -41,7 +43,7 @@
     .dropzone span { display: block; margin-top: 4px; font-size: 12px; color: #64748b; }
     .helper-tip {
       display: none;
-      margin: 16px 0 8px;
+      margin: 16px 0 10px;
       font-size: 12px;
       color: #64748b;
     }
@@ -51,17 +53,13 @@
       margin: 0 0 18px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
     }
     .file-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
       background: #f8fafc;
       border: 1px solid #e2e8f0;
-      padding: 10px 12px;
-      border-radius: 8px;
-      gap: 10px;
+      padding: 12px;
+      border-radius: 10px;
       cursor: grab;
       user-select: none;
     }
@@ -74,6 +72,12 @@
     .sortable-chosen {
       box-shadow: 0 6px 16px rgba(37, 99, 235, 0.15);
       border-color: #93c5fd;
+    }
+    .file-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
     }
     .file-info {
       display: flex;
@@ -116,12 +120,30 @@
     .file-details { min-width: 0; }
     .file-name {
       font-size: 14px;
-      font-weight: 500;
+      font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .file-size { font-size: 12px; color: #64748b; }
+    .file-meta {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    .page-badge {
+      display: inline-block;
+      background: #e0e7ff;
+      color: #1d4ed8;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 99px;
+      font-size: 11px;
+      margin-left: 4px;
+    }
+    .page-badge.error {
+      background: #fee2e2;
+      color: #dc2626;
+    }
     .delete-btn {
       background: #ffffff;
       border: 1px solid #cbd5e1;
@@ -141,23 +163,91 @@
       border-color: #fca5a5;
       color: #dc2626;
     }
+    .page-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed #e2e8f0;
+    }
+    .page-controls input[type="text"] {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-size: 13px;
+      background: #ffffff;
+      color: #1e293b;
+    }
+    .page-controls input[type="text"]:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
+    .page-controls input[type="text"].invalid {
+      border-color: #dc2626;
+      background: #fef2f2;
+    }
+    .pick-btn {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      padding: 6px 11px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .pick-btn:hover {
+      border-color: #2563eb;
+      color: #2563eb;
+      background: #eff6ff;
+    }
+    .range-error {
+      color: #dc2626;
+      font-size: 11px;
+      margin-top: 5px;
+      display: none;
+    }
     .output-group {
       display: none;
       margin-bottom: 16px;
     }
-    .output-group label {
+    .output-group > label {
       display: block;
       font-size: 13px;
       font-weight: 500;
       margin-bottom: 6px;
       color: #475569;
     }
-    .output-group input {
+    .output-group input[type="text"] {
       width: 100%;
       padding: 9px 12px;
       border: 1px solid #cbd5e1;
       border-radius: 8px;
       font-size: 14px;
+    }
+    .zip-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding: 9px 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #334155;
+      cursor: pointer;
+      user-select: none;
+    }
+    .zip-option input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #2563eb;
+      cursor: pointer;
     }
     .merge-btn {
       width: 100%;
@@ -180,12 +270,279 @@
       text-align: center;
       color: #475569;
     }
+
+    /* Modal Pilih Halaman dengan Preview */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 100;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: #ffffff;
+      width: 100%;
+      max-width: 760px;
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .modal-title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .modal-sub {
+      margin: 3px 0 0;
+      font-size: 12px;
+      color: #64748b;
+      word-break: break-all;
+    }
+    .quick-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .quick-btn {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .quick-btn:hover { background: #e2e8f0; }
+    .modal-hint {
+      margin-left: auto;
+      font-size: 11px;
+      color: #64748b;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .page-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+      gap: 12px;
+      overflow-y: auto;
+      padding: 8px;
+      background: #f1f5f9;
+      border-radius: 10px;
+      margin-bottom: 14px;
+      min-height: 220px;
+      max-height: 60vh;
+    }
+    .page-card {
+      position: relative;
+      background: #ffffff;
+      border: 2px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .page-card:hover {
+      border-color: #93c5fd;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+    .page-card.selected {
+      border-color: #2563eb;
+      background: #eff6ff;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    .page-card:not(.selected) .thumb-box img {
+      opacity: 0.55;
+      filter: grayscale(35%);
+    }
+    .thumb-box {
+      width: 100%;
+      aspect-ratio: 1 / 1.38;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .thumb-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #ffffff;
+      display: block;
+    }
+    .thumb-placeholder {
+      font-size: 11px;
+      color: #94a3b8;
+      text-align: center;
+      padding: 6px;
+    }
+    .check-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1.5px solid #94a3b8;
+      color: transparent;
+      font-size: 12px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+    .page-card.selected .check-badge {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #ffffff;
+    }
+    .zoom-btn {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.78);
+      border: none;
+      color: #ffffff;
+      padding: 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.88;
+      z-index: 2;
+      transition: opacity 0.15s, background 0.15s;
+    }
+    .zoom-btn:hover {
+      opacity: 1;
+      background: #0f172a;
+    }
+    .page-label {
+      margin-top: 7px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #334155;
+    }
+    .page-card.selected .page-label {
+      color: #1d4ed8;
+    }
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding-top: 12px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .modal-count { font-size: 13px; color: #475569; font-weight: 500; }
+    .modal-btns { display: flex; gap: 8px; }
+    .btn-secondary {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: #2563eb;
+      border: none;
+      color: #ffffff;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    /* Overlay Zoom Halaman */
+    .zoom-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.82);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 200;
+    }
+    .zoom-backdrop.open { display: flex; }
+    .zoom-box {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 14px;
+      max-width: 92vw;
+      max-height: 92vh;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+    }
+    .zoom-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .zoom-top span {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .zoom-body {
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      background: #e2e8f0;
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .zoom-body canvas, .zoom-body img {
+      max-width: 100%;
+      height: auto;
+      background: #ffffff;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h2>Merge PDF</h2>
-    <p class="subtitle">Pilih beberapa file PDF, atur urutannya, lalu gabungkan.</p>
+    <p class="subtitle">Pilih beberapa file PDF, lihat pratinjau & atur urutannya, lalu gabungkan.</p>
 
     <div class="dropzone" id="dropzone" onclick="document.getElementById('pdfInput').click()">
       <p>+ Klik untuk pilih atau tarik file PDF ke sini</p>
@@ -194,28 +551,110 @@
     <input type="file" id="pdfInput" accept="application/pdf" multiple hidden />
 
     <p class="helper-tip" id="helperTip">
-      Tip: Geser baris untuk atur urutan, atau <strong>klik kotak nomor biru</strong> untuk langsung ketik posisi urutan.
+      Tip: Geser baris untuk atur urutan file, atau klik <strong>Pilih Hal.</strong> untuk melihat pratinjau tiap halaman.
     </p>
     <ul id="fileList"></ul>
 
     <div class="output-group" id="outputGroup">
       <label for="outputName">Nama file hasil:</label>
-      <input type="text" id="outputName" value="hasil-merge.pdf" placeholder="hasil-merge.pdf" />
+      <input type="text" id="outputName" value="hasil-merge" placeholder="hasil-merge" />
+
+      <label class="zip-option">
+        <input type="checkbox" id="zipCheckbox" onchange="updateButtonLabel()" />
+        <span>Masukkan hasil PDF ke dalam arsip <strong>.ZIP</strong></span>
+      </label>
     </div>
 
-    <button class="merge-btn" id="mergeBtn" onclick="mergePDFs()">Gabungkan & Download</button>
+    <button class="merge-btn" id="mergeBtn" onclick="mergePDFs()">Gabungkan & Download PDF</button>
     <p id="status"></p>
   </div>
 
+  <!-- Modal Pilih Halaman dengan Preview -->
+  <div class="modal-backdrop" id="pageModal" onclick="if(event.target === this) closePageModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h3 class="modal-title">Pilih Halaman PDF</h3>
+          <p class="modal-sub" id="modalFileName"></p>
+        </div>
+        <button class="delete-btn" onclick="closePageModal()" title="Tutup">×</button>
+      </div>
+
+      <div class="quick-actions">
+        <button type="button" class="quick-btn" onclick="modalQuickSelect('all')">Pilih Semua</button>
+        <button type="button" class="quick-btn" onclick="modalQuickSelect('none')">Kosongkan</button>
+        <button type="button" class="quick-btn" onclick="modalQuickSelect('odd')">Halaman Ganjil</button>
+        <button type="button" class="quick-btn" onclick="modalQuickSelect('even')">Halaman Genap</button>
+        <span class="modal-hint">
+          Klik gambar untuk pilih, Klik
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <line x1="20" y1="20" x2="16.2" y2="16.2"></line>
+          </svg>
+          untuk perbesar
+        </span>
+      </div>
+
+      <div class="page-grid" id="pageGrid"></div>
+
+      <div class="modal-footer">
+        <span class="modal-count" id="modalSelectedCount">0 halaman dipilih</span>
+        <div class="modal-btns">
+          <button type="button" class="btn-secondary" onclick="closePageModal()">Batal</button>
+          <button type="button" class="btn-primary" id="saveModalBtn" onclick="savePageModal()">Simpan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay Perbesar Halaman -->
+  <div class="zoom-backdrop" id="zoomModal" onclick="if(event.target === this) closeZoomModal()">
+    <div class="zoom-box">
+      <div class="zoom-top">
+        <span id="zoomTitle">Pratinjau Halaman</span>
+        <button type="button" class="delete-btn" onclick="closeZoomModal()" title="Tutup">×</button>
+      </div>
+      <div class="zoom-body" id="zoomBody"></div>
+    </div>
+  </div>
+
   <script>
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    const ZOOM_ICON_SVG = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <line x1="20" y1="20" x2="16.2" y2="16.2"></line>
+      </svg>
+    `;
+
     let selectedFiles = [];
+    let activeModalIndex = null;
+    let modalSelectedSet = new Set();
+    let activePdfJsDoc = null;
+    let thumbObserver = null;
 
     const pdfInput = document.getElementById('pdfInput');
     const dropzone = document.getElementById('dropzone');
     const fileList = document.getElementById('fileList');
     const helperTip = document.getElementById('helperTip');
     const outputGroup = document.getElementById('outputGroup');
+    const zipCheckbox = document.getElementById('zipCheckbox');
+    const mergeBtn = document.getElementById('mergeBtn');
     const statusEl = document.getElementById('status');
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (document.getElementById('zoomModal').classList.contains('open')) {
+          closeZoomModal();
+        } else if (document.getElementById('pageModal').classList.contains('open')) {
+          closePageModal();
+        }
+      }
+    });
 
     if (window.Sortable) {
       new Sortable(fileList, {
@@ -238,6 +677,12 @@
       });
     }
 
+    function updateButtonLabel() {
+      mergeBtn.textContent = zipCheckbox.checked
+        ? 'Gabungkan & Download ZIP'
+        : 'Gabungkan & Download PDF';
+    }
+
     pdfInput.addEventListener('change', (e) => {
       addFiles(e.target.files);
       pdfInput.value = '';
@@ -256,14 +701,38 @@
       }
     });
 
-    function addFiles(files) {
+    async function addFiles(files) {
       const pdfs = Array.from(files).filter(f => f.type === 'application/pdf');
       if (pdfs.length === 0) {
         statusEl.textContent = 'Hanya file PDF yang didukung.';
         return;
       }
-      selectedFiles = selectedFiles.concat(pdfs);
-      statusEl.textContent = '';
+
+      statusEl.textContent = 'Membaca informasi halaman PDF...';
+      const { PDFDocument } = PDFLib;
+      let failedCount = 0;
+
+      for (const file of pdfs) {
+        try {
+          const bytes = await file.arrayBuffer();
+          const pdf = await PDFDocument.load(bytes);
+          selectedFiles.push({
+            file,
+            name: file.name,
+            size: file.size,
+            bytes,
+            totalPages: pdf.getPageCount(),
+            pageRange: '',
+            thumbnails: {}
+          });
+        } catch (err) {
+          failedCount++;
+        }
+      }
+
+      statusEl.textContent = failedCount > 0
+        ? `${failedCount} file gagal dibaca (pastikan PDF tidak ter-password).`
+        : '';
       renderList();
     }
 
@@ -287,6 +756,325 @@
       renderList();
     }
 
+    function parsePageRanges(rangeStr, totalPages) {
+      const trimmed = (rangeStr || '').trim();
+      if (!trimmed || /^(all|semua)$/i.test(trimmed)) {
+        return {
+          valid: true,
+          isAll: true,
+          indices: Array.from({ length: totalPages }, (_, i) => i)
+        };
+      }
+
+      const rawParts = trimmed.split(',');
+      const parts = rawParts.map(p => p.trim()).filter(p => p !== '');
+      if (parts.length === 0) {
+        return { valid: false, error: 'Format halaman tidak valid.' };
+      }
+
+      const indices = [];
+      for (const part of parts) {
+        if (/^\d+$/.test(part)) {
+          const p = parseInt(part, 10);
+          if (p < 1 || p > totalPages) {
+            return { valid: false, error: `Halaman ${p} di luar batas (1–${totalPages}).` };
+          }
+          indices.push(p - 1);
+        } else if (/^(\d*)-(\d*)$/.test(part)) {
+          const match = part.match(/^(\d*)-(\d*)$/);
+          if (!match[1] && !match[2]) {
+            return { valid: false, error: `Format "${part}" tidak valid.` };
+          }
+          const start = match[1] ? parseInt(match[1], 10) : 1;
+          const end = match[2] ? parseInt(match[2], 10) : totalPages;
+          if (start < 1 || start > totalPages || end < 1 || end > totalPages) {
+            return { valid: false, error: `Rentang "${part}" di luar batas (1–${totalPages}).` };
+          }
+          if (start <= end) {
+            for (let i = start; i <= end; i++) indices.push(i - 1);
+          } else {
+            for (let i = start; i >= end; i--) indices.push(i - 1);
+          }
+        } else {
+          return { valid: false, error: `Format "${part}" tidak dikenali (contoh: 1-3, 5).` };
+        }
+      }
+
+      return { valid: true, isAll: false, indices };
+    }
+
+    function formatIndicesToRange(indices, totalPages) {
+      const sorted = [...new Set(indices)].sort((a, b) => a - b);
+      if (sorted.length === 0 || sorted.length === totalPages) return '';
+
+      const ranges = [];
+      let start = sorted[0];
+      let prev = sorted[0];
+
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] === prev + 1) {
+          prev = sorted[i];
+        } else {
+          ranges.push(start === prev ? `${start + 1}` : `${start + 1}-${prev + 1}`);
+          start = prev = sorted[i];
+        }
+      }
+      ranges.push(start === prev ? `${start + 1}` : `${start + 1}-${prev + 1}`);
+      return ranges.join(', ');
+    }
+
+    function onRangeInput(index, value) {
+      const item = selectedFiles[index];
+      item.pageRange = value;
+
+      const parsed = parsePageRanges(value, item.totalPages);
+      const badgeEl = document.getElementById(`page-badge-${index}`);
+      const inputEl = document.getElementById(`range-input-${index}`);
+      const errorEl = document.getElementById(`range-error-${index}`);
+
+      if (parsed.valid) {
+        badgeEl.classList.remove('error');
+        badgeEl.textContent = parsed.isAll
+          ? `Semua (${item.totalPages} hal.)`
+          : `${parsed.indices.length} dari ${item.totalPages} hal.`;
+        inputEl.classList.remove('invalid');
+        errorEl.style.display = 'none';
+      } else {
+        badgeEl.classList.add('error');
+        badgeEl.textContent = 'Format salah';
+        inputEl.classList.add('invalid');
+        errorEl.textContent = parsed.error;
+        errorEl.style.display = 'block';
+      }
+    }
+
+    /* Logika Modal Pilih Halaman + Pratinjau Thumbnail */
+    async function openPageModal(index) {
+      activeModalIndex = index;
+      const item = selectedFiles[index];
+      document.getElementById('modalFileName').textContent = `${item.name} (${item.totalPages} halaman)`;
+
+      const parsed = parsePageRanges(item.pageRange, item.totalPages);
+      modalSelectedSet = new Set(
+        parsed.valid
+          ? parsed.indices
+          : Array.from({ length: item.totalPages }, (_, i) => i)
+      );
+
+      document.getElementById('pageModal').classList.add('open');
+
+      if (activePdfJsDoc) {
+        try { await activePdfJsDoc.destroy(); } catch (_) {}
+        activePdfJsDoc = null;
+      }
+
+      if (window.pdfjsLib) {
+        try {
+          const loadingTask = pdfjsLib.getDocument({ data: item.bytes.slice(0) });
+          activePdfJsDoc = await loadingTask.promise;
+        } catch (err) {
+          activePdfJsDoc = null;
+        }
+      }
+
+      renderModalGrid();
+    }
+
+    async function closePageModal() {
+      document.getElementById('pageModal').classList.remove('open');
+      if (thumbObserver) {
+        thumbObserver.disconnect();
+        thumbObserver = null;
+      }
+      if (activePdfJsDoc) {
+        try { await activePdfJsDoc.destroy(); } catch (_) {}
+        activePdfJsDoc = null;
+      }
+      activeModalIndex = null;
+    }
+
+    function toggleModalPage(pageIndex, cardEl) {
+      if (modalSelectedSet.has(pageIndex)) {
+        modalSelectedSet.delete(pageIndex);
+        cardEl.classList.remove('selected');
+      } else {
+        modalSelectedSet.add(pageIndex);
+        cardEl.classList.add('selected');
+      }
+      updateModalFooter();
+    }
+
+    function modalQuickSelect(mode) {
+      if (activeModalIndex === null) return;
+      const total = selectedFiles[activeModalIndex].totalPages;
+      modalSelectedSet.clear();
+
+      for (let i = 0; i < total; i++) {
+        if (mode === 'all') modalSelectedSet.add(i);
+        if (mode === 'odd' && (i + 1) % 2 === 1) modalSelectedSet.add(i);
+        if (mode === 'even' && (i + 1) % 2 === 0) modalSelectedSet.add(i);
+      }
+
+      document.querySelectorAll('#pageGrid .page-card').forEach((card, idx) => {
+        card.classList.toggle('selected', modalSelectedSet.has(idx));
+      });
+      updateModalFooter();
+    }
+
+    function updateModalFooter() {
+      if (activeModalIndex === null) return;
+      const total = selectedFiles[activeModalIndex].totalPages;
+      const count = modalSelectedSet.size;
+      document.getElementById('modalSelectedCount').textContent = `${count} dari ${total} halaman dipilih`;
+      document.getElementById('saveModalBtn').disabled = count === 0;
+    }
+
+    async function renderPageThumbnail(pageIndex, thumbBoxEl) {
+      if (activeModalIndex === null) return;
+      const item = selectedFiles[activeModalIndex];
+      const pageNum = pageIndex + 1;
+
+      if (item.thumbnails[pageNum]) {
+        thumbBoxEl.innerHTML = `<img src="${item.thumbnails[pageNum]}" alt="Halaman ${pageNum}" />`;
+        return;
+      }
+
+      if (!activePdfJsDoc) {
+        thumbBoxEl.innerHTML = `<div class="thumb-placeholder">Pratinjau tidak tersedia</div>`;
+        return;
+      }
+
+      try {
+        const page = await activePdfJsDoc.getPage(pageNum);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const targetWidth = 240;
+        const scale = targetWidth / baseViewport.width;
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext('2d');
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        item.thumbnails[pageNum] = dataUrl;
+        thumbBoxEl.innerHTML = `<img src="${dataUrl}" alt="Halaman ${pageNum}" />`;
+      } catch (err) {
+        thumbBoxEl.innerHTML = `<div class="thumb-placeholder">Gagal memuat</div>`;
+      }
+    }
+
+    function renderModalGrid() {
+      if (activeModalIndex === null) return;
+      const item = selectedFiles[activeModalIndex];
+      const total = item.totalPages;
+      const grid = document.getElementById('pageGrid');
+      grid.innerHTML = '';
+
+      if (thumbObserver) {
+        thumbObserver.disconnect();
+      }
+
+      thumbObserver = new IntersectionObserver((entries, obs) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const card = entry.target;
+            const pageIdx = parseInt(card.dataset.pageIndex, 10);
+            const thumbBox = card.querySelector('.thumb-box');
+            obs.unobserve(card);
+            renderPageThumbnail(pageIdx, thumbBox);
+          }
+        });
+      }, {
+        root: grid,
+        rootMargin: '180px'
+      });
+
+      for (let i = 0; i < total; i++) {
+        const pageNum = i + 1;
+        const card = document.createElement('div');
+        card.className = 'page-card' + (modalSelectedSet.has(i) ? ' selected' : '');
+        card.dataset.pageIndex = i;
+
+        const cachedImg = item.thumbnails[pageNum]
+          ? `<img src="${item.thumbnails[pageNum]}" alt="Halaman ${pageNum}" />`
+          : `<div class="thumb-placeholder">Memuat hal. ${pageNum}...</div>`;
+
+        card.innerHTML = `
+          <button type="button" class="zoom-btn" title="Perbesar halaman ${pageNum}">${ZOOM_ICON_SVG}</button>
+          <span class="check-badge">✓</span>
+          <div class="thumb-box">${cachedImg}</div>
+          <div class="page-label">Halaman ${pageNum}</div>
+        `;
+
+        card.querySelector('.zoom-btn').addEventListener('click', (e) => {
+          e.stopPropagation();
+          openZoomModal(i);
+        });
+
+        card.addEventListener('click', () => toggleModalPage(i, card));
+        grid.appendChild(card);
+
+        if (!item.thumbnails[pageNum]) {
+          thumbObserver.observe(card);
+        }
+      }
+
+      updateModalFooter();
+    }
+
+    async function openZoomModal(pageIndex) {
+      if (activeModalIndex === null) return;
+      const item = selectedFiles[activeModalIndex];
+      const pageNum = pageIndex + 1;
+
+      document.getElementById('zoomTitle').textContent = `${item.name} — Halaman ${pageNum} dari ${item.totalPages}`;
+      const zoomBody = document.getElementById('zoomBody');
+      zoomBody.innerHTML = '<p style="color:#475569;font-size:13px;">Memuat tampilan besar...</p>';
+      document.getElementById('zoomModal').classList.add('open');
+
+      if (!activePdfJsDoc) {
+        if (item.thumbnails[pageNum]) {
+          zoomBody.innerHTML = `<img src="${item.thumbnails[pageNum]}" alt="Halaman ${pageNum}" />`;
+        }
+        return;
+      }
+
+      try {
+        const page = await activePdfJsDoc.getPage(pageNum);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const targetWidth = Math.min(720, window.innerWidth - 80);
+        const scale = Math.max(1.2, targetWidth / baseViewport.width);
+        const viewport = page.getViewport({ scale });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        const ctx = canvas.getContext('2d');
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        zoomBody.innerHTML = '';
+        zoomBody.appendChild(canvas);
+      } catch (err) {
+        zoomBody.innerHTML = '<p style="color:#dc2626;font-size:13px;">Gagal memuat halaman.</p>';
+      }
+    }
+
+    function closeZoomModal() {
+      document.getElementById('zoomModal').classList.remove('open');
+      document.getElementById('zoomBody').innerHTML = '';
+    }
+
+    function savePageModal() {
+      if (activeModalIndex === null || modalSelectedSet.size === 0) return;
+      const item = selectedFiles[activeModalIndex];
+      item.pageRange = formatIndicesToRange([...modalSelectedSet], item.totalPages);
+      closePageModal();
+      renderList();
+    }
+
     function formatSize(bytes) {
       if (bytes < 1024) return bytes + ' B';
       if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -302,72 +1090,163 @@
     function renderList() {
       fileList.innerHTML = '';
       outputGroup.style.display = selectedFiles.length > 0 ? 'block' : 'none';
-      helperTip.style.display = selectedFiles.length > 1 ? 'block' : 'none';
+      helperTip.style.display = selectedFiles.length > 0 ? 'block' : 'none';
 
-      selectedFiles.forEach((file, index) => {
+      selectedFiles.forEach((item, index) => {
+        const parsed = parsePageRanges(item.pageRange, item.totalPages);
+        const badgeText = parsed.valid
+          ? (parsed.isAll ? `Semua (${item.totalPages} hal.)` : `${parsed.indices.length} dari ${item.totalPages} hal.`)
+          : 'Format salah';
+
         const li = document.createElement('li');
         li.className = 'file-item';
 
         li.innerHTML = `
-          <div class="file-info">
-            <span class="drag-handle" title="Geser untuk ubah urutan">⋮⋮</span>
-            <input
-              type="number"
-              class="badge-input"
-              value="${index + 1}"
-              min="1"
-              max="${selectedFiles.length}"
-              title="Klik untuk ketik nomor urutan tujuan"
-              onfocus="this.select()"
-              onchange="jumpToPosition(${index}, this.value)"
-              onkeydown="if(event.key === 'Enter') this.blur()"
-            />
-            <div class="file-details">
-              <div class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
-              <div class="file-size">${formatSize(file.size)}</div>
+          <div class="file-top">
+            <div class="file-info">
+              <span class="drag-handle" title="Geser untuk ubah urutan">⋮⋮</span>
+              <input
+                type="number"
+                class="badge-input"
+                value="${index + 1}"
+                min="1"
+                max="${selectedFiles.length}"
+                title="Klik untuk ketik nomor urutan tujuan"
+                onfocus="this.select()"
+                onchange="jumpToPosition(${index}, this.value)"
+                onkeydown="if(event.key === 'Enter') this.blur()"
+              />
+              <div class="file-details">
+                <div class="file-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+                <div class="file-meta">
+                  ${formatSize(item.size)}
+                  <span class="page-badge ${parsed.valid ? '' : 'error'}" id="page-badge-${index}">${badgeText}</span>
+                </div>
+              </div>
             </div>
+            <button class="delete-btn" onclick="removeFile(${index})" title="Hapus">×</button>
           </div>
-          <button class="delete-btn" onclick="removeFile(${index})" title="Hapus">×</button>
+
+          <div class="page-controls">
+            <input
+              type="text"
+              id="range-input-${index}"
+              class="${parsed.valid ? '' : 'invalid'}"
+              value="${escapeHtml(item.pageRange)}"
+              placeholder="Semua halaman (misal: 1-3, 5)"
+              oninput="onRangeInput(${index}, this.value)"
+            />
+            <button type="button" class="pick-btn" onclick="openPageModal(${index})">Pilih Hal.</button>
+          </div>
+          <div class="range-error" id="range-error-${index}" style="display: ${parsed.valid ? 'none' : 'block'}">
+            ${parsed.valid ? '' : escapeHtml(parsed.error)}
+          </div>
         `;
 
         fileList.appendChild(li);
       });
     }
 
+    async function saveFile(blob, filename, mimeType, description, extension) {
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: description,
+              accept: { [mimeType]: [extension] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return true;
+        } catch (err) {
+          if (err.name === 'AbortError') return false;
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return true;
+    }
+
     async function mergePDFs() {
-      if (selectedFiles.length < 2) {
-        statusEl.textContent = 'Pilih minimal 2 file PDF dulu.';
+      if (selectedFiles.length === 0) {
+        statusEl.textContent = 'Pilih minimal 1 file PDF dulu.';
         return;
       }
 
-      const mergeBtn = document.getElementById('mergeBtn');
+      const parsedList = selectedFiles.map((item) => ({
+        item,
+        parsed: parsePageRanges(item.pageRange, item.totalPages)
+      }));
+
+      const invalidItem = parsedList.find(entry => !entry.parsed.valid);
+      if (invalidItem) {
+        statusEl.textContent = `Periksa pilihan halaman pada "${invalidItem.item.name}".`;
+        return;
+      }
+
+      const totalSelectedPages = parsedList.reduce((sum, entry) => sum + entry.parsed.indices.length, 0);
+      if (totalSelectedPages === 0) {
+        statusEl.textContent = 'Tidak ada halaman yang dipilih untuk digabung.';
+        return;
+      }
+
       mergeBtn.disabled = true;
-      statusEl.textContent = 'Lagi menggabungkan...';
+      const isZip = zipCheckbox.checked;
+      statusEl.textContent = `Menggabungkan ${totalSelectedPages} halaman...`;
 
       try {
         const { PDFDocument } = PDFLib;
         const mergedPdf = await PDFDocument.create();
 
-        for (const file of selectedFiles) {
-          const bytes = await file.arrayBuffer();
-          const pdf = await PDFDocument.load(bytes);
-          const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+        for (const { item, parsed } of parsedList) {
+          const pdf = await PDFDocument.load(item.bytes);
+          const pages = await mergedPdf.copyPages(pdf, parsed.indices);
           pages.forEach((page) => mergedPdf.addPage(page));
         }
 
         const mergedBytes = await mergedPdf.save();
-        const blob = new Blob([mergedBytes], { type: 'application/pdf' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
 
-        let fileName = document.getElementById('outputName').value.trim() || 'hasil-merge.pdf';
-        if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
-        link.download = fileName;
-        link.click();
+        const rawName = document.getElementById('outputName').value.trim() || 'hasil-merge';
+        const baseName = rawName.replace(/\.(pdf|zip)$/i, '') || 'hasil-merge';
+        const pdfFileName = baseName + '.pdf';
 
-        statusEl.textContent = `Selesai! ${selectedFiles.length} file berhasil digabung.`;
+        if (isZip) {
+          const zip = new JSZip();
+          zip.file(pdfFileName, mergedBytes, {
+            date: new Date(),
+            platform: 'DOS',
+            dosPermissions: 0x20
+          });
+          const zipBytes = await zip.generateAsync({
+            type: 'uint8array',
+            compression: 'STORE',
+            platform: 'DOS'
+          });
+          const zipBlob = new Blob([zipBytes], { type: 'application/zip' });
+          const zipFileName = baseName + '.zip';
+          const saved = await saveFile(zipBlob, zipFileName, 'application/zip', 'ZIP Archive', '.zip');
+          statusEl.textContent = saved
+            ? `Selesai! ${totalSelectedPages} halaman digabung ke dalam ${zipFileName}.`
+            : 'Penyimpanan dibatalkan.';
+        } else {
+          const pdfBlob = new Blob([mergedBytes], { type: 'application/pdf' });
+          const saved = await saveFile(pdfBlob, pdfFileName, 'application/pdf', 'PDF Document', '.pdf');
+          statusEl.textContent = saved
+            ? `Selesai! ${totalSelectedPages} halaman berhasil digabung menjadi ${pdfFileName}.`
+            : 'Penyimpanan dibatalkan.';
+        }
       } catch (err) {
-        statusEl.textContent = 'Gagal memproses PDF. Pastikan file tidak ter-password.';
+        statusEl.textContent = 'Gagal memproses PDF. Pastikan file tidak rusak.';
       } finally {
         mergeBtn.disabled = false;
       }
